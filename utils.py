@@ -209,7 +209,7 @@ def find_top_personas(generated_personas, top_k=10):
 # STEP 4: Purchase Decisions
 # ============================================================================
 
-def analyze_purchase_decisions(product_description: str) -> Dict[str, Any]:
+def analyze_purchase_decisions(product_description: str, age_ranges: List[str] = None, gender: str = "Both") -> Dict[str, Any]:
     system_prompt = PURCHASE_DECISION_SYSTEM_PROMPT
 
     results = {"yes": 0, "no": 0, "unknown": 0, "details": []}

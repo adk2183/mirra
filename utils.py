@@ -117,10 +117,11 @@ def generate_relevant_personas(product_description: str) -> List[str]:
 # ============================================================================
 # STEP 2: Generate Product Persona 
 # ============================================================================
-def generate_product_personas(product_description: str) -> List[str]:
+def generate_product_personas(product_description: str) -> Dict[str, Any]:
     """
     Ask the model to generate 5 distinct consumer personality profiles
     that would likely purchase or be interested in this product.
+    Returns a dict with 'personas', 'age_ranges', and 'gender'.
     """
     system_prompt = PERSONA_GENERATION_SYSTEM_PROMPT
     # Updated user prompt:
@@ -132,6 +133,8 @@ def generate_product_personas(product_description: str) -> List[str]:
     # Parse model output
     try:
         response_text = (response_text or "").strip()
+
+        # Remove markdown code blocks
         if response_text.startswith("```json"):
             response_text = response_text[7:]
         if response_text.startswith("```"):
@@ -139,17 +142,35 @@ def generate_product_personas(product_description: str) -> List[str]:
         if response_text.endswith("```"):
             response_text = response_text[:-3]
 
-        parsed = json.loads(response_text)
+        # Try to find JSON object in the response
+        # Look for the first { and last } to extract just the JSON
+        start_idx = response_text.find('{')
+        end_idx = response_text.rfind('}')
 
-        # Ensure valid JSON list of strings
-        if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed):
-            return parsed
-        else:
-            print(f"⚠️ Unexpected format. Model returned: {response_text}")
-            return []
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            json_str = response_text[start_idx:end_idx+1]
+            parsed = json.loads(json_str)
+
+            # Validate structure
+            if isinstance(parsed, dict):
+                personas = parsed.get("personas", [])
+                age_ranges = parsed.get("age_ranges", [])
+                gender = parsed.get("gender", "Both")
+
+                # Ensure personas is a list of strings
+                if isinstance(personas, list) and all(isinstance(x, str) for x in personas):
+                    return {
+                        "personas": personas,
+                        "age_ranges": age_ranges,
+                        "gender": gender
+                    }
+
+        print(f"⚠️ Unexpected format. Model returned: {response_text}")
+        return {"personas": [], "age_ranges": [], "gender": "Both"}
+
     except Exception as e:
         print(f"⚠️ Persona generation parse error: {e}. Response: {response_text}")
-        return []
+        return {"personas": [], "age_ranges": [], "gender": "Both"}
 
 
 # ============================================================================

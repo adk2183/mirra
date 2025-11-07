@@ -8,6 +8,7 @@ import random
 import numpy as np
 from botocore.exceptions import ClientError
 from tqdm import tqdm
+
 from prompts import (
     PURCHASE_DECISION_SYSTEM_PROMPT,
     PERSONA_GENERATION_SYSTEM_PROMPT,
@@ -116,26 +117,21 @@ def generate_relevant_personas(product_description: str) -> List[str]:
 # ============================================================================
 # STEP 2: Generate Product Persona 
 # ============================================================================
-def generate_product_personas(product_description: str) -> dict:
+def generate_product_personas(product_description: str) -> List[str]:
     """
-    Ask the model to generate 5 distinct consumer personality profiles,
-    two age ranges, and gender(s) for potential customers.
-    Returns a dict with 'personas', 'age_ranges', and 'gender'.
+    Ask the model to generate 5 distinct consumer personality profiles
+    that would likely purchase or be interested in this product.
     """
     system_prompt = PERSONA_GENERATION_SYSTEM_PROMPT
+    # Updated user prompt:
     user_prompt = get_persona_generation_prompt(product_description, num_personas=5)
 
     # Call the model
-    response_text = invoke_bedrock_model(user_prompt, system_prompt, max_tokens=300)
+    response_text = invoke_bedrock_model(user_prompt, system_prompt, max_tokens=200)
 
     # Parse model output
     try:
         response_text = (response_text or "").strip()
-
-        # Debug: print raw response
-        print(f"🔍 Raw LLM response for demographics:\n{response_text}\n")
-
-        # Remove markdown code blocks
         if response_text.startswith("```json"):
             response_text = response_text[7:]
         if response_text.startswith("```"):
@@ -143,43 +139,17 @@ def generate_product_personas(product_description: str) -> dict:
         if response_text.endswith("```"):
             response_text = response_text[:-3]
 
-        response_text = response_text.strip()
+        parsed = json.loads(response_text)
 
-        # Extract JSON object from the response
-        # Find the first { and last } to extract just the JSON
-        json_start = response_text.find('{')
-        json_end = response_text.rfind('}')
-
-        if json_start != -1 and json_end != -1 and json_end > json_start:
-            json_text = response_text[json_start:json_end + 1]
+        # Ensure valid JSON list of strings
+        if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed):
+            return parsed
         else:
-            json_text = response_text
-
-        parsed = json.loads(json_text)
-
-        # Debug: print parsed result
-        print(f"🔍 Parsed demographics JSON: {parsed}\n")
-
-        # Validate the structure
-        if isinstance(parsed, dict):
-            personas = parsed.get("personas", [])
-            age_ranges = parsed.get("age_ranges", [])
-            gender = parsed.get("gender", "Both")
-
-            # Ensure we have the expected data
-            if isinstance(personas, list) and isinstance(age_ranges, list):
-                print(f"✅ Successfully parsed - Personas: {personas}, Age ranges: {age_ranges}, Gender: {gender}")
-                return {
-                    "personas": personas,
-                    "age_ranges": age_ranges,
-                    "gender": gender
-                }
-
-        print(f"⚠️ Unexpected format. Model returned: {response_text}")
-        return {"personas": [], "age_ranges": [], "gender": "Both"}
+            print(f"⚠️ Unexpected format. Model returned: {response_text}")
+            return []
     except Exception as e:
         print(f"⚠️ Persona generation parse error: {e}. Response: {response_text}")
-        return {"personas": [], "age_ranges": [], "gender": "Both"}
+        return []
 
 
 # ============================================================================
@@ -218,11 +188,7 @@ def find_top_personas(generated_personas, top_k=10):
 # STEP 4: Purchase Decisions
 # ============================================================================
 
-def analyze_purchase_decisions(
-    product_description: str,
-    age_ranges: List[str] = None,
-    gender: str = None
-) -> Dict[str, Any]:
+def analyze_purchase_decisions(product_description: str) -> Dict[str, Any]:
     system_prompt = PURCHASE_DECISION_SYSTEM_PROMPT
 
     results = {"yes": 0, "no": 0, "unknown": 0, "details": []}
@@ -233,11 +199,6 @@ def analyze_purchase_decisions(
 
     subset_df = PERSONA_DF.head(50)
     total_personas = len(subset_df)
-
-    # Log demographic filtering info
-    if age_ranges or gender:
-        print(f"🎯 Target demographics - Age: {age_ranges}, Gender: {gender}")
-
     print(f"🔍 Beginning purchase decision analysis for {total_personas} personas (test mode, rate-limited)...")
 
     # for i, row in tqdm(PERSONA_DF.iterrows()):
@@ -246,30 +207,6 @@ def analyze_purchase_decisions(
         if not persona_summary:
             continue
 
-        persona_age = row.get("Age", None)
-        persona_gender = row.get("Gender", None)
-
-        # Check if persona matches target demographics
-        # Normalize age for comparison (handle "65" vs "65+" case)
-        age_normalized = "65" if persona_age == "65" else persona_age
-        age_match = (not age_ranges or age_normalized in age_ranges)
-
-        # Handle "Both" gender or specific gender matching
-        gender_match = (not gender or gender == "Both" or persona_gender == gender)
-
-        # If persona doesn't match demographics, automatically mark as "no"
-        if not (age_match and gender_match):
-            decision = "no"
-            results["no"] += 1
-            results["details"].append({
-                "persona_id": row.get("pid", i),
-                "decision": decision,
-                "persona_summary": persona_summary,
-                "age": persona_age
-            })
-            continue
-
-        # Persona matches demographics, proceed with LLM decision
         user_prompt = f"<PROFILE>\n{persona_summary}\n</PROFILE>\n\n<PRODUCT>\n{product_description}\n</PRODUCT>"
 
         # retry loop for throttling or transient network errors
@@ -306,7 +243,7 @@ def analyze_purchase_decisions(
             "persona_id": row.get("pid", i),
             "decision": decision,
             "persona_summary": persona_summary,
-            "age": persona_age
+            "age": row.get("Age", None)
         })
 
         # polite delay between calls to stay under QPS limits

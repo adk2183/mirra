@@ -147,16 +147,17 @@ def get_persona_generation_prompt(product_description: str, num_personas: int = 
     return f"""Based on the product description below, generate {num_personas}–{num_personas + 1} concise marketing personas that reflect the main consumer types most likely to buy or identify with this product.
 
 Each persona title should be:
-- 2–3 words long
+- 1-2 words long
 - Distinct in mindset, lifestyle, or motivation
 - Broad enough for marketing segmentation (not overly specific)
 - Evocative and human (sounds like a type of buyer)
+- Nothing overly cute or creative. They have to be clear and professional. 
 - Title-case formatted, like:
-  * "Active Achiever"
-  * "Status Seeker"
-  * "Health Pursuer"
-  * "Value Maximizer"
-  * "Trend Follower"
+  * "Athlete"
+  * "Gamer"
+  * "Health Conscious"
+  * "Budget Conscious"
+  * "Tech Enthusiast"
 
 Additionally, identify the demographic profile of potential customers:
 - Select one or more age ranges that are most likely to purchase this product from: "18-29", "30-49", "50-64", "65+"

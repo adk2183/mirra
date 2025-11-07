@@ -131,6 +131,11 @@ def generate_product_personas(product_description: str) -> dict:
     # Parse model output
     try:
         response_text = (response_text or "").strip()
+
+        # Debug: print raw response
+        print(f"🔍 Raw LLM response for demographics:\n{response_text}\n")
+
+        # Remove markdown code blocks
         if response_text.startswith("```json"):
             response_text = response_text[7:]
         if response_text.startswith("```"):
@@ -138,7 +143,22 @@ def generate_product_personas(product_description: str) -> dict:
         if response_text.endswith("```"):
             response_text = response_text[:-3]
 
-        parsed = json.loads(response_text)
+        response_text = response_text.strip()
+
+        # Extract JSON object from the response
+        # Find the first { and last } to extract just the JSON
+        json_start = response_text.find('{')
+        json_end = response_text.rfind('}')
+
+        if json_start != -1 and json_end != -1 and json_end > json_start:
+            json_text = response_text[json_start:json_end + 1]
+        else:
+            json_text = response_text
+
+        parsed = json.loads(json_text)
+
+        # Debug: print parsed result
+        print(f"🔍 Parsed demographics JSON: {parsed}\n")
 
         # Validate the structure
         if isinstance(parsed, dict):
@@ -148,6 +168,7 @@ def generate_product_personas(product_description: str) -> dict:
 
             # Ensure we have the expected data
             if isinstance(personas, list) and isinstance(age_ranges, list):
+                print(f"✅ Successfully parsed - Personas: {personas}, Age ranges: {age_ranges}, Gender: {gender}")
                 return {
                     "personas": personas,
                     "age_ranges": age_ranges,

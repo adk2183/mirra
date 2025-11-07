@@ -159,7 +159,7 @@ Each persona title should be:
   * "Trend Follower"
 
 Additionally, identify the demographic profile of potential customers:
-- Select TWO age ranges that are most likely to purchase this product from: "18-29", "30-49", "50-64", "65+"
+- Select one or more age ranges that are most likely to purchase this product from: "18-29", "30-49", "50-64", "65+"
 - Select the gender(s) most likely to purchase: "Male", "Female", or "Both"
 
 Return your response as a JSON object with the following format:

@@ -29,10 +29,18 @@ def main():
     results["personas"] = personas
     print(f"✅ Generated {len(personas)} personas")
 
-    # Step 2: Generate product personas
-    product_persona = generate_product_personas(product_description)
+    # Step 2: Generate product personas with demographics
+    product_persona_data = generate_product_personas(product_description)
+    product_persona = product_persona_data.get("personas", [])
+    age_ranges = product_persona_data.get("age_ranges", [])
+    gender = product_persona_data.get("gender", "Both")
     results["product_persona"] = product_persona
+    results["demographics"] = {
+        "target_age_ranges": age_ranges,
+        "target_gender": gender
+    }
     print(f"✅ Generated {len(product_persona)} product personas")
+    print(f"📊 Demographics - Age ranges: {age_ranges}, Gender: {gender}")
 
     # Step 3: Find top 10 similar personas from database
     try:
@@ -43,9 +51,13 @@ def main():
         results["errors"].append(f"Error in find_top_personas: {str(e)}")
         print(f"❌ Error running find_top_personas: {e}")
 
-    # Step 4: Analyze purchase decisions
+    # Step 4: Analyze purchase decisions with demographic filtering
     try:
-        analysis_results = analyze_purchase_decisions(product_description)
+        analysis_results = analyze_purchase_decisions(
+            product_description=product_description,
+            age_ranges=age_ranges,
+            gender=gender
+        )
         results["analysis_results"] = analysis_results
         print(f"✅ Purchase analysis completed")
     except Exception as e:
@@ -178,6 +190,27 @@ def main():
     results["consumer_insights"] = consumer_insights
     print(f"✅ Generated insights for {len(consumer_insights)} consumers")
 
+    # Build final response matching the API format
+    final_output = {
+        "would_buy_pie": would_buy_pie_counts,
+        "yes_pie": yes_pie_counts,
+        "age_distribution": age_distribution,
+        "consumer_insights": consumer_insights,
+        "demographics": {
+            "target_age_ranges": age_ranges,
+            "target_gender": gender
+        },
+        # Additional debug info
+        "debug_info": {
+            "product_description": product_description,
+            "personas": personas,
+            "product_persona": product_persona,
+            "total_evaluated": analysis_results.get("total_evaluated", 0) if analysis_results else 0,
+            "purchase_rate": analysis_results.get("purchase_rate", 0) if analysis_results else 0,
+            "errors": results["errors"]
+        }
+    }
+
     # Convert DataFrames to JSON-serializable format
     def convert_to_serializable(obj):
         if isinstance(obj, pd.DataFrame):
@@ -188,13 +221,17 @@ def main():
             return [convert_to_serializable(item) for item in obj]
         return obj
 
-    serializable_results = convert_to_serializable(results)
+    serializable_output = convert_to_serializable(final_output)
 
     # Write all results to output.json
     with open("output.json", "w") as f:
-        json.dump(serializable_results, f, indent=2)
+        json.dump(serializable_output, f, indent=2)
 
     print(f"\n✅ All results saved to output.json")
+    print(f"\n📈 Summary:")
+    print(f"  - Would buy: {would_buy_pie_counts.get('yes', 0)}/{would_buy_pie_counts.get('yes', 0) + would_buy_pie_counts.get('no', 0)} personas")
+    print(f"  - Target demographics: {age_ranges} | {gender}")
+    print(f"  - Consumer insights generated for: {list(consumer_insights.keys())}")
 
 if __name__ == "__main__":
     main()

@@ -116,19 +116,17 @@ def generate_relevant_personas(product_description: str) -> List[str]:
 # ============================================================================
 # STEP 2: Generate Product Persona 
 # ============================================================================
-def generate_product_personas(product_description: str) -> List[str]:
+def generate_product_personas(product_description: str) -> dict:
     """
-    Ask the model to generate 5 distinct consumer personality profiles
-    that would likely purchase or be interested in this product.
+    Ask the model to generate 5 distinct consumer personality profiles,
+    two age ranges, and gender(s) for potential customers.
+    Returns a dict with 'personas', 'age_ranges', and 'gender'.
     """
     system_prompt = PERSONA_GENERATION_SYSTEM_PROMPT
-    # Updated user prompt:
-    user_prompt = get_persona_generation_prompt(product_description, num_personas=5)  
-    + "\n\nYou must return exactly 5 distinct personas as a JSON array of 5 strings. "
-    "Do not include any extra explanations, notes, or markdown formatting (like ```json)."
+    user_prompt = get_persona_generation_prompt(product_description, num_personas=5)
 
     # Call the model
-    response_text = invoke_bedrock_model(user_prompt, system_prompt, max_tokens=200)
+    response_text = invoke_bedrock_model(user_prompt, system_prompt, max_tokens=300)
 
     # Parse model output
     try:
@@ -142,15 +140,25 @@ def generate_product_personas(product_description: str) -> List[str]:
 
         parsed = json.loads(response_text)
 
-        # Ensure valid JSON list of strings
-        if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed):
-            return parsed
-        else:
-            print(f"⚠️ Unexpected format. Model returned: {response_text}")
-            return []
+        # Validate the structure
+        if isinstance(parsed, dict):
+            personas = parsed.get("personas", [])
+            age_ranges = parsed.get("age_ranges", [])
+            gender = parsed.get("gender", "Both")
+
+            # Ensure we have the expected data
+            if isinstance(personas, list) and isinstance(age_ranges, list):
+                return {
+                    "personas": personas,
+                    "age_ranges": age_ranges,
+                    "gender": gender
+                }
+
+        print(f"⚠️ Unexpected format. Model returned: {response_text}")
+        return {"personas": [], "age_ranges": [], "gender": "Both"}
     except Exception as e:
         print(f"⚠️ Persona generation parse error: {e}. Response: {response_text}")
-        return []
+        return {"personas": [], "age_ranges": [], "gender": "Both"}
 
 
 # ============================================================================
@@ -189,7 +197,11 @@ def find_top_personas(generated_personas, top_k=10):
 # STEP 4: Purchase Decisions
 # ============================================================================
 
-def analyze_purchase_decisions(product_description: str) -> Dict[str, Any]:
+def analyze_purchase_decisions(
+    product_description: str,
+    age_ranges: List[str] = None,
+    gender: str = None
+) -> Dict[str, Any]:
     system_prompt = PURCHASE_DECISION_SYSTEM_PROMPT
 
     results = {"yes": 0, "no": 0, "unknown": 0, "details": []}
@@ -200,6 +212,11 @@ def analyze_purchase_decisions(product_description: str) -> Dict[str, Any]:
 
     subset_df = PERSONA_DF.head(50)
     total_personas = len(subset_df)
+
+    # Log demographic filtering info
+    if age_ranges or gender:
+        print(f"🎯 Target demographics - Age: {age_ranges}, Gender: {gender}")
+
     print(f"🔍 Beginning purchase decision analysis for {total_personas} personas (test mode, rate-limited)...")
 
     # for i, row in tqdm(PERSONA_DF.iterrows()):
@@ -208,6 +225,30 @@ def analyze_purchase_decisions(product_description: str) -> Dict[str, Any]:
         if not persona_summary:
             continue
 
+        persona_age = row.get("Age", None)
+        persona_gender = row.get("Gender", None)
+
+        # Check if persona matches target demographics
+        # Normalize age for comparison (handle "65" vs "65+" case)
+        age_normalized = "65" if persona_age == "65" else persona_age
+        age_match = (not age_ranges or age_normalized in age_ranges)
+
+        # Handle "Both" gender or specific gender matching
+        gender_match = (not gender or gender == "Both" or persona_gender == gender)
+
+        # If persona doesn't match demographics, automatically mark as "no"
+        if not (age_match and gender_match):
+            decision = "no"
+            results["no"] += 1
+            results["details"].append({
+                "persona_id": row.get("pid", i),
+                "decision": decision,
+                "persona_summary": persona_summary,
+                "age": persona_age
+            })
+            continue
+
+        # Persona matches demographics, proceed with LLM decision
         user_prompt = f"<PROFILE>\n{persona_summary}\n</PROFILE>\n\n<PRODUCT>\n{product_description}\n</PRODUCT>"
 
         # retry loop for throttling or transient network errors
@@ -244,7 +285,7 @@ def analyze_purchase_decisions(product_description: str) -> Dict[str, Any]:
             "persona_id": row.get("pid", i),
             "decision": decision,
             "persona_summary": persona_summary,
-            "age": row.get("Age", None)
+            "age": persona_age
         })
 
         # polite delay between calls to stay under QPS limits

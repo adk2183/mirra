@@ -41,9 +41,13 @@ async def analyze_product(request: ProductRequest):
         personas = generate_relevant_personas(product_description)
         print(f"✅ Generated {len(personas)} personas")
 
-        # Step 2: Generate product personas
-        product_persona = generate_product_personas(product_description)
+        # Step 2: Generate product personas with demographics
+        product_persona_data = generate_product_personas(product_description)
+        product_persona = product_persona_data.get("personas", [])
+        age_ranges = product_persona_data.get("age_ranges", [])
+        gender = product_persona_data.get("gender", "Both")
         print(f"✅ Generated {len(product_persona)} product personas")
+        print(f"📊 Demographics - Age ranges: {age_ranges}, Gender: {gender}")
 
         # Step 3: Find top 10 similar personas from database
         try:
@@ -53,9 +57,13 @@ async def analyze_product(request: ProductRequest):
             print(f"❌ Error running find_top_personas: {e}")
             raise HTTPException(status_code=500, detail=f"Error finding top personas: {str(e)}")
 
-        # Step 4: Analyze purchase decisions
+        # Step 4: Analyze purchase decisions with demographic filtering
         try:
-            analysis_results = analyze_purchase_decisions(product_description)
+            analysis_results = analyze_purchase_decisions(
+                product_description=product_description,
+                age_ranges=age_ranges,
+                gender=gender
+            )
             print(f"✅ Purchase analysis completed")
         except Exception as e:
             print(f"⚠️ Error in analyze_purchase_decisions: {e}")
@@ -181,7 +189,11 @@ async def analyze_product(request: ProductRequest):
             "would_buy_pie": would_buy_pie_counts,
             "yes_pie": yes_pie_counts,
             "age_distribution": age_distribution,
-            "consumer_insights": consumer_insights
+            "consumer_insights": consumer_insights,
+            "demographics": {
+                "target_age_ranges": age_ranges,
+                "target_gender": gender
+            }
         }
 
         return result

@@ -158,8 +158,16 @@ Each persona title should be:
   * "Value Maximizer"
   * "Trend Follower"
 
-Return your response as a JSON array of strings, with no commentary — for example:
-["Active Achiever", "Status Seeker", "Health Pursuer", "Value Maximizer", "Trend Follower"]
+Additionally, identify the demographic profile of potential customers:
+- Select TWO age ranges that are most likely to purchase this product from: "18-29", "30-49", "50-64", "65+"
+- Select the gender(s) most likely to purchase: "Male", "Female", or "Both"
+
+Return your response as a JSON object with the following format:
+{{
+  "personas": ["Active Achiever", "Status Seeker", "Health Pursuer", "Value Maximizer", "Trend Follower"],
+  "age_ranges": ["30-49", "50-64"],
+  "gender": "Both"
+}}
 
 <PRODUCT>
 {product_description}

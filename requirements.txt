@@ -2,15 +2,12 @@ aiohappyeyeballs==2.6.1
 aiohttp==3.13.2
 aiosignal==1.4.0
 altair==5.5.0
-amazon-bedrock==0.0.5
 annotated-doc==0.0.3
 annotated-types==0.7.0
 anyio==4.11.0
 async-timeout==5.0.1
 attrs==25.4.0
 blinker==1.9.0
-boto3==1.40.67
-botocore==1.40.67
 cachetools==6.2.1
 certifi==2025.10.5
 charset-normalizer==3.4.4

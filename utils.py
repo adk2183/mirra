@@ -1,12 +1,11 @@
 import json
 import os
 import pandas as pd
-import boto3
+from openai import OpenAI
 from typing import Dict, Any, List
 import time
 import random
 import numpy as np
-from botocore.exceptions import ClientError
 from tqdm import tqdm
 
 from prompts import (
@@ -34,49 +33,35 @@ except Exception as e:
     PERSONA_DF = pd.DataFrame()
 
 # ============================================================================
-# BEDROCK CONFIGURATION
+# OPENAI CONFIGURATION
 # ============================================================================
 load_dotenv()
-bedrock_runtime = boto3.client(
-    service_name="bedrock-runtime",
-    region_name=os.environ.get("AWS_REGION", "us-east-1")
-)
 
-BEDROCK_MODEL_ID = "meta.llama3-70b-instruct-v1:0"
+def get_openai_client():
+    """Get OpenAI client instance."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY not found in environment variables")
+    return OpenAI(api_key=api_key)
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
 # ============================================================================
 # UTILS
 # ============================================================================
-def invoke_bedrock_model(prompt: str, system_prompt: str, max_tokens: int = 512) -> str:
-    """Invoke Llama 3 on Amazon Bedrock."""
-    # Format prompt for Llama 3 with system and user prompts
-    formatted_prompt = f"""<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-
-{system_prompt}<|eot_id|><|start_header_id|>user<|end_header_id|>
-
-{prompt}<|eot_id|><|start_header_id|>assistant<|end_header_id|>
-
-"""
-
-    request_body = {
-        "prompt": formatted_prompt,
-        "max_gen_len": max_tokens,
-        "temperature": 1.0,
-        "top_p": 0.9,
-    }
-
+def invoke_llm_model(prompt: str, system_prompt: str, max_tokens: int = 512) -> str:
+    """Invoke OpenAI GPT model."""
     try:
-        response = bedrock_runtime.invoke_model(
-            modelId=BEDROCK_MODEL_ID,
-            body=json.dumps(request_body),
-            contentType="application/json",
-            accept="application/json",
+        client = get_openai_client()
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ],
         )
-        response_body = json.loads(response["body"].read())
-        # Llama 3 returns text in "generation" field
-        return response_body.get("generation", "").strip()
+        return response.choices[0].message.content.strip()
     except Exception as e:
-        print(f"❌ Bedrock invocation error: {e}")
+        print(f"❌ OpenAI invocation error: {e}")
         return ""
 
 
@@ -98,7 +83,7 @@ def generate_relevant_personas(product_description: str) -> List[str]:
     system_prompt = RELEVANT_PERSONA_SELECTION_SYSTEM_PROMPT
     attributes = get_relevant_personality()
     user_prompt = get_relevant_personality_prompt(product_description, attributes)
-    response_text = invoke_bedrock_model(user_prompt, system_prompt, max_tokens=200)
+    response_text = invoke_llm_model(user_prompt, system_prompt, max_tokens=200)
     try:
         response_text = (response_text or "").strip()
         if response_text.startswith("```json"):
@@ -128,7 +113,7 @@ def generate_product_personas(product_description: str) -> Dict[str, Any]:
     user_prompt = get_persona_generation_prompt(product_description, num_personas=5)
 
     # Call the model
-    response_text = invoke_bedrock_model(user_prompt, system_prompt, max_tokens=200)
+    response_text = invoke_llm_model(user_prompt, system_prompt, max_tokens=200)
 
     # Parse model output
     try:
@@ -233,21 +218,19 @@ def analyze_purchase_decisions(product_description: str, age_ranges: List[str] =
         # retry loop for throttling or transient network errors
         for attempt in range(MAX_RETRIES):
             try:
-                response = invoke_bedrock_model(user_prompt, system_prompt, max_tokens=10).lower()
+                response = invoke_llm_model(user_prompt, system_prompt, max_tokens=10).lower()
                 break  # success → exit retry loop
-            except ClientError as e:
-                if e.response["Error"]["Code"] == "ThrottlingException":
+            except Exception as e:
+                error_msg = str(e).lower()
+                # Check for rate limit errors
+                if "rate" in error_msg or "quota" in error_msg or "429" in error_msg:
                     wait_time = (BACKOFF_FACTOR ** attempt) + random.uniform(0.1, 0.5)
-                    print(f"⚠️ Throttled (attempt {attempt+1}/{MAX_RETRIES}). Sleeping {wait_time:.1f}s...")
+                    print(f"⚠️ Rate limited (attempt {attempt+1}/{MAX_RETRIES}). Sleeping {wait_time:.1f}s...")
                     time.sleep(wait_time)
                 else:
-                    print(f"❌ ClientError ({e.response['Error']['Code']}) — skipping persona {i}")
+                    print(f"❌ Error on persona {i}: {e}")
                     response = "unknown"
                     break
-            except Exception as e:
-                print(f"❌ Unexpected error on persona {i}: {e}")
-                response = "unknown"
-                break
 
         # normalize model output
         if "yes" in response:
@@ -309,7 +292,7 @@ def classify_yes_personas(
         )
 
         # Call model
-        response = invoke_bedrock_model(user_prompt, system_prompt, max_tokens=50)
+        response = invoke_llm_model(user_prompt, system_prompt, max_tokens=50)
         match = (response or "").strip().strip('"').strip("'")
 
         # Normalize to 'Other' if not an exact match
@@ -368,7 +351,7 @@ RELEVANCE: [your 1 sentence answer]
 INTENT: [your 1 sentence answer]"""
 
     try:
-        response = invoke_bedrock_model(user_prompt, system_prompt, max_tokens=300)
+        response = invoke_llm_model(user_prompt, system_prompt, max_tokens=300)
 
         # Parse the response to extract the three answers
         answers = {
